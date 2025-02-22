@@ -1,0 +1,23 @@
+# Ignore resource files
+resources/
+
+# Ignore datasets
+data/
+
+# Ignore results
+results/
+
+# Ignore Snakemake logs
+.snakemake/
+
+# Ignore hidden system files (optional)
+.DS_Store
+Thumbs.db
+
+# Ignore Python/Conda environment files (optional)
+__pycache__/
+*.pyc
+*.pyo
+*.ipynb_checkpoints/
+.env
+*.log
