@@ -1,0 +1,234 @@
+################################################################################
+# SNAKEMAKE SETUP
+################################################################################
+
+from snakemake.utils import min_version
+min_version("8.0")
+
+
+configfile: 'config/config.yaml'
+COHORTS = list(config["cohort"].keys())
+print("Loaded cohort:", COHORTS)
+CHROMS  = config["PRScs-auto"]["chromosomes"]
+PHIS    = config["PRScs-auto"]["phi"]
+print("Loaded PHI:", PHIS)
+META    = config["PRScs-auto"]["meta"]
+REF_DIR = config["PRScs-auto"]["ref_dir"]
+
+# Summary statistics
+POPULATION = list(config["summary_statistics"].keys()) 
+SST_FILES = [details["sst_file"] for details in config["summary_statistics"].values()]
+SAMPLE_SIZES = [str(details["sample_size"]) for details in config["summary_statistics"].values()]
+shell.executable('/bin/bash')
+################################################################################
+# FINAL RULE: Compile all resulting score files
+################################################################################
+rule all:
+    input:
+        expand(
+            "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt", 
+            cohort=COHORTS if COHORTS else ["ADGC"],  # Fallback default
+            phi=PHIS
+        )
+
+################################################################################
+# RULE 1: MUNGE SUMMARY STATISTICS
+################################################################################
+rule munge_sumstats:
+    """
+    Converts raw summary statistics into a format suitable for PRS-CS Auto.
+    """
+    input:
+        "resources/Bellenguez2022stage1_load/Bellenguez2022stage1_load.b37.chrall.tsv.gz"
+    output:
+        "resources/EUR_cs_auto.txt"
+    params:
+        output_file = "resources/EUR_cs_auto.txt"
+    #conda:
+    #    "envs/r_env.yaml"
+    #singularity: "docker://sjfandrews/mungesumstats:0.0.2"
+    singularity: "docker://codewithrakshya/mungesumstats_docker"
+    threads: 1
+    resources:
+        mem_mb=16000,
+        time_min=600
+    script:
+        'scripts/munge_sumstats.R'
+
+################################################################################
+# RULE 2: MUNGE BIM / PVAR -> BED/BIM/FAM
+################################################################################
+rule munge_bim:
+    """
+    Reads a .pvar file, reformats it, and generates a SNP mapping file (cpra2rsids.txt).
+    """
+    input:
+        pvar="resources/ADGC/out.pvar"
+    output:
+        name_file="resources/ADGC/cpra2rsids.txt"
+    params:
+        ref_genome="GRCh38"
+    singularity: "docker://codewithrakshya/mungesumstats_docker"
+    script: "scripts/munge_bim.R"
+
+
+
+########################################
+
+rule run_plink:
+    """
+    Uses PLINK2 to update variant IDs in the genotype files.
+    """
+    input:
+        name_file="resources/ADGC/cpra2rsids.txt"
+    output:
+        bed="resources/ADGC/adgc.bed",
+        bim="resources/ADGC/adgc.bim",
+        fam="resources/ADGC/adgc.fam"
+    params:
+        plink_prefix="resources/ADGC/out",
+        plink_out="resources/ADGC/adgc"
+    #singularity: "docker://codewithrakshya/mungesumstats_docker"
+    conda : "envs/plink.yaml"
+    shell:
+        """
+        plink2 --pfile {params.plink_prefix} \
+               --update-name {input.name_file} \
+               --keep-allele-order \
+               --make-bed \
+               --out {params.plink_out}
+        """
+
+################################################################################
+# RULE 3: PREPARE HAPMAP3 SNP LIST (OPTIONAL)
+################################################################################
+rule prepare_hm3:
+    """
+    Creates a list of HapMap3 SNPs (one ID per line) that will be used for filtering.
+    """
+    input:
+        "resources/snpinfo_mult_1kg_hm3"
+    output:
+        "resources/w_hm3.snplist"
+    shell:
+        "cut -f1 {input} > {output}"
+
+################################################################################
+# RULE 4: FILTER GENOTYPE DATA TO HAPMAP3 SNPs
+################################################################################
+rule plink_filter:
+    """
+    Filters the genotype data (in PLINK format) to only HapMap3 SNPs.
+    """
+    input:
+        bed = rules.run_plink.output.bed,
+        bim = rules.run_plink.output.bim,
+        fam = rules.run_plink.output.fam,
+        hm3 = "resources/w_hm3.snplist"
+    output:
+        # Create filtered PLINK files with a consistent naming scheme.
+        multiext("resources/{cohort}_hm3", ".bed", ".bim", ".fam")
+    conda:
+        "envs/plink.yaml"
+    shell:
+        """
+        plink --bfile resources/ADGC/out \
+              --extract {input.hm3} \
+              --make-bed \
+              --out resources/{wildcards.cohort}_hm3
+        """
+
+################################################################################
+# RULE 5: RUN PRS-CS AUTO (per chromosome, per cohort, per PHI)
+################################################################################
+
+rule prscs_auto:
+    """
+    Runs PRS-CS Auto for each chromosome.
+    """
+    input:
+        summary_stats = "resources/EUR_cs_auto.txt",
+        # Hard-code the cohort value (ADGC) since it's the only one
+        bfiles = lambda wc: [f"resources/ADGC_hm3.bed",
+                              f"resources/ADGC_hm3.bim",
+                              f"resources/ADGC_hm3.fam"],
+        ref_dir = REF_DIR
+    output:
+        expand("results/{cohort}/{cohort}_phi{phi}_chr{chrom}.txt", 
+               chrom=CHROMS, cohort=COHORTS, phi=PHIS)
+    params:
+        cohort = COHORTS[0],
+        ref_dir = REF_DIR,
+        bim_prefix = f"resources/{COHORTS[0]}_hm3",
+        phi = "auto",
+        n_gwas = 90000  # Adjust sample size as needed
+    conda:
+        "envs/prscs.yaml"
+    shell:
+        """
+        python resources/PRScs/PRScs.py \
+          --ref_dir={params.ref_dir} \
+          --bim_prefix={params.bim_prefix} \
+          --sst_file {input.summary_stats} \
+          --n_gwas={params.n_gwas} \
+          --phi={params.phi} \
+          --chrom=all \
+          --out_dir=results/prscs_results/
+        """
+################################################################################
+# RULE 6: CONCATENATE CHR-SPECIFIC PRS WEIGHTS
+################################################################################
+rule concat_chrom_files:
+    """
+    Concatenates PRS-CS output from all chromosomes.
+    """
+    input:
+        expand(
+            "results/{{cohort}}/{{cohort}}_phi{{phi}}_chr{chrom}.txt",
+            chrom=CHROMS, cohort=COHORTS, phi=PHIS
+        )
+    output:
+        "results/{cohort}/{cohort}_phi{phi}_chrAll.txt"
+    shell:
+        "cat {input} > {output}"
+
+################################################################################
+# RULE 7: REMOVE APOE REGION
+################################################################################
+rule rm_apoe:
+    """
+    Removes the APOE region (chr19:44,408,822-45,408,822) from final PRS weights.
+    """
+    input:
+        "results/{cohort}/{cohort}_phi{phi}_chrAll.txt"
+    output:
+        "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
+    shell:
+        """
+        awk '$1 != 19 || ($1 == 19 && ($3 < 44408822 || $3 > 45408822))' {input} > {output}
+        """
+
+################################################################################
+# RULE 8: SCORE WITH PLINK
+################################################################################
+rule plink_score:
+    """
+    Uses PLINK to score individuals with the final PRS weights.
+    """
+    input:
+        bfiles  = rules.plink_filter.output,
+        weights = rules.rm_apoe.output
+    output:
+        "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt"
+    params:
+        bfile = lambda wc: f"resources/{wc.cohort}_hm3"
+    conda:
+        "envs/plink.yaml"
+    shell:
+        """
+        plink --bfile {params.bfile} \
+              --score {input.weights} 2 4 6 sum \
+              --out results/{wildcards.cohort}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores
+
+        mv results/{wildcards.cohort}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores.profile {output}
+        """
