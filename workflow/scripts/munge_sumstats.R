@@ -5,9 +5,6 @@ input_path <- snakemake@input[[1]]
 output_path <- snakemake@output[[1]]
 ref_genome <- snakemake@params[["ref_genome"]]
 log_folder <- snakemake@params[["log_folder"]]
-if (is.null(log_folder) || log_folder == "") {
-  log_folder <- tempdir()
-}
 
 data(sumstatsColHeaders) #Precomputed
 # sumstatsColHeaders <- readRDS("results/Updated_sumstatsColHeaders.rds")
@@ -22,23 +19,24 @@ ss <- read_sumstats(
 )
 
 out <- MungeSumstats::format_sumstats(
-  path = ss,
-  ref_genome = ref_genome,
+  path = input_path,
+  ref_genome = NULL,
+  convert_ref_genome = NULL,
   sort_coordinates = TRUE,
   return_data = TRUE,
   return_format = 'data.table',
   INFO_filter = 0,
-  N_dropNA = FALSE,
+  N_dropNA = TRUE,
   convert_small_p = FALSE,
   rmv_chr = NULL,
   snp_ids_are_rs_ids = FALSE,
   bi_allelic_filter = FALSE,
   force_new = TRUE,
   allele_flip_check = FALSE,
-  log_folder = log_folder,
+  log_folder = tempdir(),
   log_folder_ind = FALSE,
   log_mungesumstats_msgs = FALSE,
-  compute_z = TRUE
+  compute_z = FALSE
 ) %>% as_tibble()
 
 # Optionally, perform additional conversions if necessary:

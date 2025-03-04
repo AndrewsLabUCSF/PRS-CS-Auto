@@ -43,7 +43,8 @@ rule munge_sumstats:
     output:
         "resources/EUR_cs_auto.txt"
     params:
-        output_file = "resources/EUR_cs_auto.txt"
+        output_file = "resources/EUR_cs_auto.txt",
+        ref_genome = "GRCh37"
     #conda:
     #    "envs/r_env.yaml"
     #singularity: "docker://sjfandrews/mungesumstats:0.0.2"
@@ -67,7 +68,7 @@ rule munge_bim:
     output:
         name_file="resources/ADGC/cpra2rsids.txt"
     params:
-        ref_genome="GRCh38"
+        ref_genome="GRCh37"
     singularity: "docker://codewithrakshya/mungesumstats_docker"
     script: "scripts/munge_bim.R"
 
@@ -132,7 +133,7 @@ rule plink_filter:
         "envs/plink.yaml"
     shell:
         """
-        plink --bfile resources/ADGC/out \
+        plink --bfile resources/ADGC/adgc \
               --extract {input.hm3} \
               --make-bed \
               --out resources/{wildcards.cohort}_hm3
