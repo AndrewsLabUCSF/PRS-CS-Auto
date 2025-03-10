@@ -3,25 +3,29 @@ library(MungeSumstats)
 
 input_path <- snakemake@input[[1]]
 output_path <- snakemake@output[[1]]
-ref_genome <- snakemake@params[["ref_genome"]]
+#ref_genome <- snakemake@params[["ref_genome"]]
 log_folder <- snakemake@params[["log_folder"]]
 
 data(sumstatsColHeaders) #Precomputed
-# sumstatsColHeaders <- readRDS("results/Updated_sumstatsColHeaders.rds")
+#data("sumstatsColHeaders", package = "MungeSumstats")
+#print(colnames(sumstatsColHeaders)) 
+#sumstatsColHeaders <- readRDS("results/Updated_sumstatsColHeaders.rds")
+
 
 message("\nReading in sumstats: ", input_path)
 ss <- read_sumstats(
   input_path,
   nThread = 1,
   nrows = Inf,
-  standardise_headers = FALSE,
+  standardise_headers = TRUE,
   mapping_file = sumstatsColHeaders
 )
 
 out <- MungeSumstats::format_sumstats(
-  path = input_path,
-  ref_genome = NULL,
+  path = ss,
+  ref_genome = "GRCh37",
   convert_ref_genome = NULL,
+  dbSNP = 144,
   sort_coordinates = TRUE,
   return_data = TRUE,
   return_format = 'data.table',
@@ -47,5 +51,19 @@ if ("LP" %in% colnames(out)) {
   out <- out %>% mutate(P = 10^(-LP))
 }
 
+# Now, select only the required columns.
+# Check if SE is available; if so, we assume BETA/SE format.
+# Otherwise, if P is available, we assume BETA/P format.
+required_cols <- c("SNP", "A1", "A2")
+if ("SE" %in% colnames(out)) {
+  required_cols <- c(required_cols, "BETA", "SE")
+} else if ("P" %in% colnames(out)) {
+  required_cols <- c(required_cols, "BETA", "P")
+} else {
+  stop("Neither SE nor P column found in the summary statistics.")
+}
+
+out <- out %>% select(all_of(required_cols))
+
 message("\nExporting sumstats: ", output_path)
-write_sumstats(out$sumstats, save_path = output_path)
+write_sumstats(out, save_path = output_path)

@@ -11,12 +11,11 @@ COHORTS = list(config["cohort"].keys())
 print("Loaded cohort:", COHORTS)
 CHROMS  = config["PRScs-auto"]["chromosomes"]
 PHIS    = config["PRScs-auto"]["phi"]
-print("Loaded PHI:", PHIS)
 META    = config["PRScs-auto"]["meta"]
 REF_DIR = config["PRScs-auto"]["ref_dir"]
 
 # Summary statistics
-POPULATION = list(config["summary_statistics"].keys()) 
+POPULATION = list(config["summary_statistics"].keys())
 SST_FILES = [details["sst_file"] for details in config["summary_statistics"].values()]
 SAMPLE_SIZES = [str(details["sample_size"]) for details in config["summary_statistics"].values()]
 shell.executable('/bin/bash')
@@ -26,9 +25,10 @@ shell.executable('/bin/bash')
 rule all:
     input:
         expand(
-            "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt", 
-            cohort=COHORTS if COHORTS else ["ADGC"],  # Fallback default
-            phi=PHIS
+            "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt",
+            cohort=COHORTS if COHORTS else ["ADGC"],# Fallback default
+            phi=PHIS,
+            chromosomes=CHROMS
         )
 
 ################################################################################
@@ -38,21 +38,17 @@ rule munge_sumstats:
     """
     Converts raw summary statistics into a format suitable for PRS-CS Auto.
     """
-    input:
-        "resources/Bellenguez2022stage1_load/Bellenguez2022stage1_load.b37.chrall.tsv.gz"
+    input: 
+        "resources/Bellenguez2022load.chrall_b37_standardized.tsv.gz"
     output:
         "resources/EUR_cs_auto.txt"
     params:
-        output_file = "resources/EUR_cs_auto.txt",
-        ref_genome = "GRCh37"
-    #conda:
-    #    "envs/r_env.yaml"
-    #singularity: "docker://sjfandrews/mungesumstats:0.0.2"
+        output_path = "resources/EUR_cs_auto.txt"
     singularity: "docker://codewithrakshya/mungesumstats_docker"
-    threads: 1
+    threads: 2
     resources:
-        mem_mb=16000,
-        time_min=600
+        mem_mb=32000,
+        time_min=1200
     script:
         'scripts/munge_sumstats.R'
 
@@ -70,8 +66,11 @@ rule munge_bim:
     params:
         ref_genome="GRCh37"
     singularity: "docker://codewithrakshya/mungesumstats_docker"
+    threads: 1
+    resources:
+        mem_mb=8000,
+        time_min=300
     script: "scripts/munge_bim.R"
-
 
 
 ########################################
@@ -89,8 +88,11 @@ rule run_plink:
     params:
         plink_prefix="resources/ADGC/out",
         plink_out="resources/ADGC/adgc"
-    #singularity: "docker://codewithrakshya/mungesumstats_docker"
     conda : "envs/plink.yaml"
+    threads: 4
+    resources:
+        mem_mb=16000,  # 16GB RAM
+        time_min=600   # 10 hours
     shell:
         """
         plink2 --pfile {params.plink_prefix} \
@@ -127,10 +129,13 @@ rule plink_filter:
         fam = rules.run_plink.output.fam,
         hm3 = "resources/w_hm3.snplist"
     output:
-        # Create filtered PLINK files with a consistent naming scheme.
         multiext("resources/{cohort}_hm3", ".bed", ".bim", ".fam")
     conda:
         "envs/plink.yaml"
+    threads: 2
+    resources:
+        mem_mb=16000,  # 16GB RAM
+        time_min=600   # 10 hours
     shell:
         """
         plink --bfile resources/ADGC/adgc \
@@ -149,31 +154,32 @@ rule prscs_auto:
     """
     input:
         summary_stats = "resources/EUR_cs_auto.txt",
-        # Hard-code the cohort value (ADGC) since it's the only one
         bfiles = lambda wc: [f"resources/ADGC_hm3.bed",
                               f"resources/ADGC_hm3.bim",
                               f"resources/ADGC_hm3.fam"],
-        ref_dir = REF_DIR
     output:
-        expand("results/{cohort}/{cohort}_phi{phi}_chr{chrom}.txt", 
+        expand("results/{cohort}/{cohort}_phi{phi}_chr{chrom}.txt",
                chrom=CHROMS, cohort=COHORTS, phi=PHIS)
     params:
-        cohort = COHORTS[0],
-        ref_dir = REF_DIR,
         bim_prefix = f"resources/{COHORTS[0]}_hm3",
-        phi = "auto",
-        n_gwas = 90000  # Adjust sample size as needed
+        phi_arg = lambda wildcards: f"--phi={PHIS}" if PHIS != 'auto' else '',
+        ref_dir = REF_DIR,
+        chrom = CHROMS,
+        n = 90000
     conda:
         "envs/prscs.yaml"
+    threads: 4
+    resources:
+        mem_mb=6400,
+        time_min=1800
     shell:
         """
         python resources/PRScs/PRScs.py \
           --ref_dir={params.ref_dir} \
           --bim_prefix={params.bim_prefix} \
           --sst_file {input.summary_stats} \
-          --n_gwas={params.n_gwas} \
-          --phi={params.phi} \
-          --chrom=all \
+          --n_gwas={params.n} \
+          --chrom={params.chrom} \
           --out_dir=results/prscs_results/
         """
 ################################################################################
@@ -184,10 +190,8 @@ rule concat_chrom_files:
     Concatenates PRS-CS output from all chromosomes.
     """
     input:
-        expand(
-            "results/{{cohort}}/{{cohort}}_phi{{phi}}_chr{chrom}.txt",
-            chrom=CHROMS, cohort=COHORTS, phi=PHIS
-        )
+        expand("results/{cohort}/{cohort}_phi{phi}_chr{chrom}.txt",
+               chrom=CHROMS, cohort=COHORTS, phi=PHIS)
     output:
         "results/{cohort}/{cohort}_phi{phi}_chrAll.txt"
     shell:
@@ -233,3 +237,4 @@ rule plink_score:
 
         mv results/{wildcards.cohort}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores.profile {output}
         """
+
