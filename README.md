@@ -6,7 +6,7 @@ This Snakemake pipeline is designed for calculating polygenic risk scores (PRS) 
 
 ## Workflow Steps
 
-1. **Munget Summary Statistics**
+1. **Munge Summary Statistics**
 
    - Converts raw summary statistics into a format compatible with PRS-CS Auto.
    - Container: `codewithrakshya/mungesumstats_docker`
