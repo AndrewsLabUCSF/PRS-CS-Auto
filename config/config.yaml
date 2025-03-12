@@ -2,23 +2,24 @@
 
 # Define cohort(s) for PRS calculation
 cohort:
-  ADGC:  # Example cohort name
+  Bellenguez38:  # Example cohort name
     genotype: "resources/ADGC/out"
 
 # Summary statistics files for each population
 summary_statistics:
   EUR:
-    sst_file: "resources/Bellenguez2022stage1_load/Bellenguez2022stage1_load.b37.chrall.tsv.gz"
+    sst_file: "resources/Bellenguez2022stage1_load_b38_chrall.vcf.gz"
+    #sst_file: "resources/Bellenguez2022stage1_load/Bellenguez2022stage1_load.b37.chrall.tsv.gz"
     sample_size: 90000  # Adjust based on study
 
 # PRS-CS Auto parameters
 PRScs-auto:
-  #chromosomes: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22]  # Chromosomes to analyze
-  chromosomes: [22]
+  chromosomes: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22]  # Chromosomes to analyze
+  #chromosomes: [21,22]
   phi: "auto"  # Auto-tune shrinkage parameter
   meta: False  # Set to True if using PRS-CSx (multi-population)
-  ref_dir: "resources/eur_w_ld_chr/22.l2.ldscore.gz"  # Path to LD reference panel
-  out_dir: "work/prscs_results/"
-  log_folder: "work/prscs_results/logs"
-
-# LD reference files (1000G European LD scores)
+  ref_dir: "resources/ld_ref/"  # Path to LD reference panel
+  out_dir: "results/prscs_results"
+  log_folder: "results/prscs_results/logs"
+  sst_file: "resources/EUR_cs_auto.txt"
+  ref_ld: "resources/PRScs/ld_ref/ldblk_1kg_eur"

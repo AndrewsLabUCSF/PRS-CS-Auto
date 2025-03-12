@@ -23,7 +23,7 @@ ss <- read_sumstats(
 
 out <- MungeSumstats::format_sumstats(
   path = ss,
-  ref_genome = "GRCh37",
+  ref_genome = "GRCh38",
   convert_ref_genome = NULL,
   dbSNP = 144,
   sort_coordinates = TRUE,

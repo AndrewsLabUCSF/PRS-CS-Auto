@@ -10,14 +10,22 @@ configfile: 'config/config.yaml'
 COHORTS = list(config["cohort"].keys())
 print("Loaded cohort:", COHORTS)
 CHROMS  = config["PRScs-auto"]["chromosomes"]
+print("Loaded chromosomes:", CHROMS)
 PHIS    = config["PRScs-auto"]["phi"]
-META    = config["PRScs-auto"]["meta"]
-REF_DIR = config["PRScs-auto"]["ref_dir"]
+print("Loaded phis:", PHIS)
+
+
 
 # Summary statistics
 POPULATION = list(config["summary_statistics"].keys())
-SST_FILES = [details["sst_file"] for details in config["summary_statistics"].values()]
 SAMPLE_SIZES = [str(details["sample_size"]) for details in config["summary_statistics"].values()]
+
+SS = [details["sst_file"] for details in config["summary_statistics"].values()]
+SST = config["PRScs-auto"]["sst_file"]
+print("Loaded summary statistics:", SS)
+REF_LD = config["PRScs-auto"]["ref_ld"]
+print("Loaded reference LD:", REF_LD)
+
 shell.executable('/bin/bash')
 ################################################################################
 # FINAL RULE: Compile all resulting score files
@@ -25,10 +33,14 @@ shell.executable('/bin/bash')
 rule all:
     input:
         expand(
+            "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE_pgsc_calc.txt",
+            cohort=COHORTS if COHORTS else ["ADGC"],# Fallback default
+            phi=PHIS
+        ),
+        expand(
             "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt",
             cohort=COHORTS if COHORTS else ["ADGC"],# Fallback default
-            phi=PHIS,
-            chromosomes=CHROMS
+            phi=PHIS
         )
 
 ################################################################################
@@ -39,7 +51,7 @@ rule munge_sumstats:
     Converts raw summary statistics into a format suitable for PRS-CS Auto.
     """
     input: 
-        "resources/Bellenguez2022load.chrall_b37_standardized.tsv.gz"
+        "resources/Bellenguez2022stage1_load_b38_chrall.vcf.gz"
     output:
         "resources/EUR_cs_auto.txt"
     params:
@@ -64,7 +76,7 @@ rule munge_bim:
     output:
         name_file="resources/ADGC/cpra2rsids.txt"
     params:
-        ref_genome="GRCh37"
+        ref_genome="GRCh38"
     singularity: "docker://codewithrakshya/mungesumstats_docker"
     threads: 1
     resources:
@@ -73,7 +85,9 @@ rule munge_bim:
     script: "scripts/munge_bim.R"
 
 
-########################################
+################################################################################
+# RULE 3: RUN PLINK2 TO UPDATE VARIANT IDS
+################################################################################
 
 rule run_plink:
     """
@@ -103,7 +117,7 @@ rule run_plink:
         """
 
 ################################################################################
-# RULE 3: PREPARE HAPMAP3 SNP LIST (OPTIONAL)
+# RULE 3: PREPARE HAPMAP3 SNP LIST (OPTIONAL) Not Used
 ################################################################################
 rule prepare_hm3:
     """
@@ -138,7 +152,7 @@ rule plink_filter:
         time_min=600   # 10 hours
     shell:
         """
-        plink --bfile resources/ADGC/adgc \
+        plink --bfile resources/{wildcards.cohort}/adgc \
               --extract {input.hm3} \
               --make-bed \
               --out resources/{wildcards.cohort}_hm3
@@ -154,18 +168,22 @@ rule prscs_auto:
     """
     input:
         summary_stats = "resources/EUR_cs_auto.txt",
-        bfiles = lambda wc: [f"resources/ADGC_hm3.bed",
-                              f"resources/ADGC_hm3.bim",
-                              f"resources/ADGC_hm3.fam"],
+        bfiles = lambda wc: [
+            f"resources/{wc.cohort}_hm3.bed",
+            f"resources/{wc.cohort}_hm3.bim",
+            f"resources/{wc.cohort}_hm3.fam"]
     output:
-        expand("results/{cohort}/{cohort}_phi{phi}_chr{chrom}.txt",
-               chrom=CHROMS, cohort=COHORTS, phi=PHIS)
+        "results/{cohort}/{cohort}_pst_eff_a1_b0.5_phi{phi}_chr{chrom}.txt"
     params:
-        bim_prefix = f"resources/{COHORTS[0]}_hm3",
-        phi_arg = lambda wildcards: f"--phi={PHIS}" if PHIS != 'auto' else '',
-        ref_dir = REF_DIR,
-        chrom = CHROMS,
-        n = 90000
+        #bim_prefix = f"resources/{COHORTS[0]}_hm3",
+        bim_prefix = lambda wc: f"resources/{wc.cohort}_hm3",
+        #phi_arg = lambda wildcards: f"--phi={PHIS}" if PHIS != 'auto' else '',
+        phi_arg = lambda wc: f"--phi={wc.phi}" if wc.phi != 'auto' else '',
+        chrom = "{chrom}",
+        ss = SST,
+        n = ",".join(SAMPLE_SIZES),
+        ref_ld = REF_LD
+
     conda:
         "envs/prscs.yaml"
     threads: 4
@@ -175,13 +193,15 @@ rule prscs_auto:
     shell:
         """
         python resources/PRScs/PRScs.py \
-          --ref_dir={params.ref_dir} \
+          --ref_dir={params.ref_ld}\
           --bim_prefix={params.bim_prefix} \
-          --sst_file {input.summary_stats} \
+          --sst_file {params.ss} \
           --n_gwas={params.n} \
           --chrom={params.chrom} \
-          --out_dir=results/prscs_results/
+            {params.phi_arg} \
+          --out_dir=results/{wildcards.cohort}/{wildcards.cohort}
         """
+
 ################################################################################
 # RULE 6: CONCATENATE CHR-SPECIFIC PRS WEIGHTS
 ################################################################################
@@ -190,8 +210,10 @@ rule concat_chrom_files:
     Concatenates PRS-CS output from all chromosomes.
     """
     input:
-        expand("results/{cohort}/{cohort}_phi{phi}_chr{chrom}.txt",
-               chrom=CHROMS, cohort=COHORTS, phi=PHIS)
+        expand(
+            "results/{{cohort}}/{{cohort}}_pst_eff_a1_b0.5_phi{{phi}}_chr{chrom}.txt",
+            chrom=CHROMS
+        )
     output:
         "results/{cohort}/{cohort}_phi{phi}_chrAll.txt"
     shell:
@@ -204,8 +226,7 @@ rule rm_apoe:
     """
     Removes the APOE region (chr19:44,408,822-45,408,822) from final PRS weights.
     """
-    input:
-        "results/{cohort}/{cohort}_phi{phi}_chrAll.txt"
+    input:rules.concat_chrom_files.output
     output:
         "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
     shell:
@@ -238,3 +259,32 @@ rule plink_score:
         mv results/{wildcards.cohort}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores.profile {output}
         """
 
+################################################################################
+# RULE 9: COMPILE ALL SCORE FILES FOR PGSC_CALC
+################################################################################
+rule make_pgsc_calc_format:
+    """
+    Convert the final PRS-CS Auto output (after APOE removal) into a pgsc_calc-compatible file.
+    """
+    input:
+        # Takes the rm_apoe output
+        "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
+    output:
+        # The new pgsc_calc-formatted file
+        "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE_pgsc_calc.txt"
+    shell:
+        # Example approach using awk
+        """
+        awk 'BEGIN {{
+          print "#pgs_name={wildcards.cohort}_phi{wildcards.phi}_pst_eff_a1_b0.5_phiauto"
+          print "#trait_reported=Alzheimer\\047s"
+          print "#genome_build=GRCh38"
+          print "#pgs_id=custom"
+          print "chr_name\\tchr_position\\teffect_allele\\tother_allele\\teffect_weight"
+        }}
+        {{
+          # In your final PRS-CS file, columns are typically:
+          # $1=CHR, $2=RSID, $3=POS, $4=A1, $5=A2, $6=WEIGHT
+          print $1"\\t"$3"\\t"$4"\\t"$5"\\t"$6
+        }}' {input} > {output}
+        """
