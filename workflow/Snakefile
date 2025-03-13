@@ -7,24 +7,34 @@ min_version("8.0")
 
 
 configfile: 'config/config.yaml'
+# Extract dataset names dynamically
+DATASETS = list(config["summary_statistics"].keys()) 
+
+#print("Loaded datasets:", DATASETS)
+
+
+# Debugging: Print entire summary_statistics structure
+import json
+#print("Full summary_statistics config:", json.dumps(config["summary_statistics"], indent=4))
+
 COHORTS = list(config["cohort"].keys())
-print("Loaded cohort:", COHORTS)
+#print("Loaded cohort:", COHORTS)
 CHROMS  = config["PRScs-auto"]["chromosomes"]
-print("Loaded chromosomes:", CHROMS)
+#print("Loaded chromosomes:", CHROMS)
 PHIS    = config["PRScs-auto"]["phi"]
-print("Loaded phis:", PHIS)
+#print("Loaded phis:", PHIS)
 
 
 
 # Summary statistics
-POPULATION = list(config["summary_statistics"].keys())
+#POPULATION = list(config["summary_statistics"].keys())
 SAMPLE_SIZES = [str(details["sample_size"]) for details in config["summary_statistics"].values()]
 
 SS = [details["sst_file"] for details in config["summary_statistics"].values()]
 SST = config["PRScs-auto"]["sst_file"]
-print("Loaded summary statistics:", SS)
+#print("Loaded summary statistics:", SS)
 REF_LD = config["PRScs-auto"]["ref_ld"]
-print("Loaded reference LD:", REF_LD)
+#print("Loaded reference LD:", REF_LD)
 
 shell.executable('/bin/bash')
 ################################################################################
@@ -33,12 +43,14 @@ shell.executable('/bin/bash')
 rule all:
     input:
         expand(
-            "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE_pgsc_calc.txt",
+            "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_pgsc_calc.txt",
+            dataset=DATASETS,
             cohort=COHORTS if COHORTS else ["ADGC"],# Fallback default
             phi=PHIS
         ),
         expand(
-            "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt",
+            "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt",
+            dataset=DATASETS,
             cohort=COHORTS if COHORTS else ["ADGC"],# Fallback default
             phi=PHIS
         )
@@ -72,9 +84,9 @@ rule munge_bim:
     Reads a .pvar file, reformats it, and generates a SNP mapping file (cpra2rsids.txt).
     """
     input:
-        pvar="resources/ADGC/out.pvar"
+        pvar="resources/{cohort}/out.pvar"
     output:
-        name_file="resources/ADGC/cpra2rsids.txt"
+        name_file="resources/{cohort}/cpra2rsids.txt"
     params:
         ref_genome="GRCh38"
     singularity: "docker://codewithrakshya/mungesumstats_docker"
@@ -94,11 +106,11 @@ rule run_plink:
     Uses PLINK2 to update variant IDs in the genotype files.
     """
     input:
-        name_file="resources/ADGC/cpra2rsids.txt"
+        name_file="resources/{cohort}/cpra2rsids.txt"
     output:
-        bed="resources/ADGC/adgc.bed",
-        bim="resources/ADGC/adgc.bim",
-        fam="resources/ADGC/adgc.fam"
+        bed="resources/{cohort}/adgc.bed",
+        bim="resources/{cohort}/adgc.bim",
+        fam="resources/{cohort}/adgc.fam"
     params:
         plink_prefix="resources/ADGC/out",
         plink_out="resources/ADGC/adgc"
@@ -173,7 +185,7 @@ rule prscs_auto:
             f"resources/{wc.cohort}_hm3.bim",
             f"resources/{wc.cohort}_hm3.fam"]
     output:
-        "results/{cohort}/{cohort}_pst_eff_a1_b0.5_phi{phi}_chr{chrom}.txt"
+        "results/{dataset}/{cohort}_pst_eff_a1_b0.5_phi{phi}_chr{chrom}.txt"
     params:
         #bim_prefix = f"resources/{COHORTS[0]}_hm3",
         bim_prefix = lambda wc: f"resources/{wc.cohort}_hm3",
@@ -199,7 +211,7 @@ rule prscs_auto:
           --n_gwas={params.n} \
           --chrom={params.chrom} \
             {params.phi_arg} \
-          --out_dir=results/{wildcards.cohort}/{wildcards.cohort}
+          --out_dir=results/{wildcards.dataset}/{wildcards.cohort}
         """
 
 ################################################################################
@@ -211,11 +223,12 @@ rule concat_chrom_files:
     """
     input:
         expand(
-            "results/{{cohort}}/{{cohort}}_pst_eff_a1_b0.5_phi{{phi}}_chr{chrom}.txt",
+            "results/{{dataset}}/{{cohort}}_pst_eff_a1_b0.5_phi{{phi}}_chr{chrom}.txt",
+            dataset=DATASETS,
             chrom=CHROMS
         )
     output:
-        "results/{cohort}/{cohort}_phi{phi}_chrAll.txt"
+        "results/{dataset}/{cohort}_phi{phi}_chrAll.txt"
     shell:
         "cat {input} > {output}"
 
@@ -228,7 +241,7 @@ rule rm_apoe:
     """
     input:rules.concat_chrom_files.output
     output:
-        "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
+        "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
     shell:
         """
         awk '$1 != 19 || ($1 == 19 && ($3 < 44408822 || $3 > 45408822))' {input} > {output}
@@ -245,7 +258,7 @@ rule plink_score:
         bfiles  = rules.plink_filter.output,
         weights = rules.rm_apoe.output
     output:
-        "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt"
+        "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt"
     params:
         bfile = lambda wc: f"resources/{wc.cohort}_hm3"
     conda:
@@ -254,9 +267,9 @@ rule plink_score:
         """
         plink --bfile {params.bfile} \
               --score {input.weights} 2 4 6 sum \
-              --out results/{wildcards.cohort}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores
+              --out results/{wildcards.dataset}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores
 
-        mv results/{wildcards.cohort}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores.profile {output}
+        mv results/{wildcards.dataset}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores.profile {output}
         """
 
 ################################################################################
@@ -268,10 +281,10 @@ rule make_pgsc_calc_format:
     """
     input:
         # Takes the rm_apoe output
-        "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
+        "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
     output:
         # The new pgsc_calc-formatted file
-        "results/{cohort}/{cohort}_phi{phi}_chrAll_noAPOE_pgsc_calc.txt"
+        "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_pgsc_calc.txt"
     shell:
         # Example approach using awk
         """
