@@ -7,10 +7,10 @@ cohort:
 
 # Summary statistics files for each population
 summary_statistics:
-  Bellenguez2022stage1_load:  # Example study name
-    sst_file: "resources/Bellenguez2022stage1_load_b38_chrall.vcf.gz"
+  Bellenguez2022stage1_load_03_13:  # Example study name
+    sst_file: "resources/Bellenguez2022stage1_load_b37_chrall.vcf.gz"
     #sst_file: "resources/Bellenguez2022stage1_load/Bellenguez2022stage1_load.b37.chrall.tsv.gz"
-    sample_size: 90000  # Adjust based on study
+    sample_size: 487511  # Adjust based on study
 
 # PRS-CS Auto parameters
 PRScs-auto:
@@ -18,8 +18,5 @@ PRScs-auto:
   #chromosomes: [21,22]
   phi: "auto"  # Auto-tune shrinkage parameter
   meta: False  # Set to True if using PRS-CSx (multi-population)
-  ref_dir: "resources/ld_ref/"  # Path to LD reference panel
-  out_dir: "results/prscs_results"
-  log_folder: "results/prscs_results/logs"
   sst_file: "resources/EUR_cs_auto.txt"
   ref_ld: "resources/PRScs/ld_ref/ldblk_1kg_eur"

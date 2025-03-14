@@ -1,6 +1,45 @@
 ################################################################################
 # SNAKEMAKE SETUP
 ################################################################################
+"""
+This snakemake workflow automates the PRS-CS Auto pipeline for multiple datasets and cohorts.
+It is designed to computer PRS for AD using PRS-CS Auto.
+
+The primary goal of this workflow is to estimate an individual's genetic risj for AD based in genome wide genetic variants.
+The workflow is designed to be run on a high-performance computing cluster.
+The steps are as follows:
+
+1. Munge summary statistics: Convert raw summary statistics into a format suitable for PRS-CS Auto.
+GWAS provide efffect sizes for genetic variants associated with AD. These effect sizes quantift how much each 
+SNP increases or decreases the risk of AD.
+
+2. Munge bim:  Converts genetic variant identifiers (SNPs) into a standardized format.
+SNP identifiers can vary between datasets. To ensure that the GWAS data aligns with the genotype data of individuals, we update variant IDs based on reference databases.
+
+3. Updating individual genotype data using run_plink: Uses PLINK2 to update genotype files by matching SNP names between summary statistics
+and individual genotypes.
+Doing this ensures that the individual genotype datasets correctly matches the variants identoified in GWAS is essential for computing as accurate PRS
+
+4. Filtering for high quality SNPs: Not using for now
+But the idea is HapMap3 are well-validated genetic variants with known properties across the populations.
+The filtering step removes low-quality SNPs that might introduce noise into the PRS calculations.
+
+5. Running PRScs-Auto to compute SNP weights:  This rule runs PRS-CS Auto on each chromosome to compute SNP weights.
+PRS-CS Auto adjusts effect sizes of SNPs based on linkage disequilibrium (LD)*, which accounts for correlations between nearby SNPs.
+This improves accuracy by preventing overestimation of genetic risk due to closely linked variants.
+
+6. Combining PRS scores across chromosomes: This rule concatenates the PRS scores from each chromosome into a single file.
+
+7. Removing the APOE region: Removes SNPs from chr19:44,408,822-45,408,822, which includes the APOE gene.
+The APOE ε4 allele is a strong genetic risk factor for Alzheimer’s. However, including APOE in a PRS often overestimates genetic risk, so it is removed to examine polygenic contributions outside of APOE.
+
+8. Scoring Individuals’ Genetic Risk:  Uses PLINK to apply the computed SNP weights to individual genotype data, generating PRS scores for each person.
+This step calculates how much genetic risk each person has for Alzheimer’s based on their genome-wide SNPs.
+
+
+* LD - describes the non-random association of alleles at different genetic loci. It means that certain combinations of genetic variants (SNPs) are inherited together more often than expected by chance due to their proximity on a chromosome.
+"""
+
 
 from snakemake.utils import min_version
 min_version("8.0")
@@ -63,7 +102,7 @@ rule munge_sumstats:
     Converts raw summary statistics into a format suitable for PRS-CS Auto.
     """
     input: 
-        "resources/Bellenguez2022stage1_load_b38_chrall.vcf.gz"
+        "resources/Bellenguez2022stage1_load_b37_chrall.vcf.gz"
     output:
         "resources/EUR_cs_auto.txt"
     params:
@@ -291,7 +330,7 @@ rule make_pgsc_calc_format:
         awk 'BEGIN {{
           print "#pgs_name={wildcards.cohort}_phi{wildcards.phi}_pst_eff_a1_b0.5_phiauto"
           print "#trait_reported=Alzheimer\\047s"
-          print "#genome_build=GRCh38"
+          print "#genome_build=GRCh37"
           print "#pgs_id=custom"
           print "chr_name\\tchr_position\\teffect_allele\\tother_allele\\teffect_weight"
         }}
