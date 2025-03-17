@@ -7,7 +7,7 @@ cohort:
 
 # Summary statistics files for each population
 summary_statistics:
-  Bellenguez2022stage1_load_03_13:  # Example study name
+  Bellenguez2022stage1_load_03_14:  # Example study name
     sst_file: "resources/Bellenguez2022stage1_load_b37_chrall.vcf.gz"
     #sst_file: "resources/Bellenguez2022stage1_load/Bellenguez2022stage1_load.b37.chrall.tsv.gz"
     sample_size: 487511  # Adjust based on study
