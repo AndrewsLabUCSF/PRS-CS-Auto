@@ -1,51 +1,12 @@
 ################################################################################
 # SNAKEMAKE SETUP
 ################################################################################
-"""
-This snakemake workflow automates the PRS-CS Auto pipeline for multiple datasets and cohorts.
-It is designed to computer PRS for AD using PRS-CS Auto.
-
-The primary goal of this workflow is to estimate an individual's genetic risj for AD based in genome wide genetic variants.
-The workflow is designed to be run on a high-performance computing cluster.
-The steps are as follows:
-
-1. Munge summary statistics: Convert raw summary statistics into a format suitable for PRS-CS Auto.
-GWAS provide efffect sizes for genetic variants associated with AD. These effect sizes quantift how much each 
-SNP increases or decreases the risk of AD.
-
-2. Munge bim:  Converts genetic variant identifiers (SNPs) into a standardized format.
-SNP identifiers can vary between datasets. To ensure that the GWAS data aligns with the genotype data of individuals, we update variant IDs based on reference databases.
-
-3. Updating individual genotype data using run_plink: Uses PLINK2 to update genotype files by matching SNP names between summary statistics
-and individual genotypes.
-Doing this ensures that the individual genotype datasets correctly matches the variants identoified in GWAS is essential for computing as accurate PRS
-
-4. Filtering for high quality SNPs: Not using for now
-But the idea is HapMap3 are well-validated genetic variants with known properties across the populations.
-The filtering step removes low-quality SNPs that might introduce noise into the PRS calculations.
-
-5. Running PRScs-Auto to compute SNP weights:  This rule runs PRS-CS Auto on each chromosome to compute SNP weights.
-PRS-CS Auto adjusts effect sizes of SNPs based on linkage disequilibrium (LD)*, which accounts for correlations between nearby SNPs.
-This improves accuracy by preventing overestimation of genetic risk due to closely linked variants.
-
-6. Combining PRS scores across chromosomes: This rule concatenates the PRS scores from each chromosome into a single file.
-
-7. Removing the APOE region: Removes SNPs from chr19:44,408,822-45,408,822, which includes the APOE gene.
-The APOE ε4 allele is a strong genetic risk factor for Alzheimer’s. However, including APOE in a PRS often overestimates genetic risk, so it is removed to examine polygenic contributions outside of APOE.
-
-8. Scoring Individuals’ Genetic Risk:  Uses PLINK to apply the computed SNP weights to individual genotype data, generating PRS scores for each person.
-This step calculates how much genetic risk each person has for Alzheimer’s based on their genome-wide SNPs.
-
-
-* LD - describes the non-random association of alleles at different genetic loci. It means that certain combinations of genetic variants (SNPs) are inherited together more often than expected by chance due to their proximity on a chromosome.
-"""
-
 
 from snakemake.utils import min_version
 min_version("8.0")
 
 
-configfile: 'config/config.yaml'
+configfile: 'config/config_aadrita.yaml'
 # Extract dataset names dynamically
 DATASETS = list(config["summary_statistics"].keys()) 
 
@@ -67,8 +28,8 @@ PHIS    = config["PRScs-auto"]["phi"]
 
 # Summary statistics
 #POPULATION = list(config["summary_statistics"].keys())
-SAMPLE_SIZES = [str(details["sample_size"]) for details in config["summary_statistics"].values()]
-
+#SAMPLE_SIZES = [str(details["sample_size"]) for details in config["summary_statistics"].values()]
+SAMPLE_SIZES = lambda wc: config["summary_statistics"][wc.dataset]["sample_size"]
 SS = [details["sst_file"] for details in config["summary_statistics"].values()]
 SST = config["PRScs-auto"]["sst_file"]
 #print("Loaded summary statistics:", SS)
@@ -92,28 +53,32 @@ rule all:
             dataset=DATASETS,
             cohort=COHORTS if COHORTS else ["ADGC"],# Fallback default
             phi=PHIS
+        ),
+        expand(
+            "results/{dataset}/{cohort}_phi{phi}_chrAll.txt",
+            dataset=DATASETS,
+            cohort=COHORTS if COHORTS else ["ADGC"],# Fallback default
+            phi=PHIS
         )
 
 ################################################################################
 # RULE 1: MUNGE SUMMARY STATISTICS
 ################################################################################
-rule munge_sumstats:
+rule format_prscs:
     """
     Converts raw summary statistics into a format suitable for PRS-CS Auto.
     """
     input: 
-        "resources/Bellenguez2022stage1_load_b37_chrall.vcf.gz"
+        "data/{dataset}.chrall.CPRA_b37.tsv.gz"
     output:
-        "resources/EUR_cs_auto.txt"
-    params:
-        output_path = "resources/EUR_cs_auto.txt"
+        "work/formatted/{dataset}_formated_ss.txt"
     singularity: "docker://codewithrakshya/mungesumstats_docker"
     threads: 2
     resources:
         mem_mb=32000,
         time_min=1200
     script:
-        'scripts/munge_sumstats.R'
+        'scripts/format_sumstats.R'
 
 ################################################################################
 # RULE 2: MUNGE BIM / PVAR -> BED/BIM/FAM
@@ -126,8 +91,6 @@ rule munge_bim:
         pvar="resources/{cohort}/out.pvar"
     output:
         name_file="resources/{cohort}/cpra2rsids.txt"
-    params:
-        ref_genome="GRCh38"
     singularity: "docker://codewithrakshya/mungesumstats_docker"
     threads: 1
     resources:
@@ -194,7 +157,7 @@ rule plink_filter:
         fam = rules.run_plink.output.fam,
         hm3 = "resources/w_hm3.snplist"
     output:
-        multiext("resources/{cohort}_hm3", ".bed", ".bim", ".fam")
+        multiext("resources/hm3/{cohort}_hm3", ".bed", ".bim", ".fam")
     conda:
         "envs/plink.yaml"
     threads: 2
@@ -206,7 +169,7 @@ rule plink_filter:
         plink --bfile resources/{wildcards.cohort}/adgc \
               --extract {input.hm3} \
               --make-bed \
-              --out resources/{wildcards.cohort}_hm3
+              --out resources/hm3/{wildcards.cohort}_hm3
         """
 
 ################################################################################
@@ -218,21 +181,21 @@ rule prscs_auto:
     Runs PRS-CS Auto for each chromosome.
     """
     input:
-        summary_stats = "resources/EUR_cs_auto.txt",
+        summary_stats = "work/formatted/{dataset}_formated_ss.txt",
         bfiles = lambda wc: [
-            f"resources/{wc.cohort}_hm3.bed",
-            f"resources/{wc.cohort}_hm3.bim",
-            f"resources/{wc.cohort}_hm3.fam"]
+            f"resources/hm3/{wc.cohort}_hm3.bed",
+            f"resources/hm3/{wc.cohort}_hm3.bim",
+            f"resources/hm3/{wc.cohort}_hm3.fam"]
     output:
         "results/{dataset}/{cohort}_pst_eff_a1_b0.5_phi{phi}_chr{chrom}.txt"
     params:
         #bim_prefix = f"resources/{COHORTS[0]}_hm3",
-        bim_prefix = lambda wc: f"resources/{wc.cohort}_hm3",
+        bim_prefix = lambda wc: f"resources/hm3/{wc.cohort}_hm3",
         #phi_arg = lambda wildcards: f"--phi={PHIS}" if PHIS != 'auto' else '',
         phi_arg = lambda wc: f"--phi={wc.phi}" if wc.phi != 'auto' else '',
         chrom = "{chrom}",
         ss = SST,
-        n = ",".join(SAMPLE_SIZES),
+        n = SAMPLE_SIZES,
         ref_ld = REF_LD
 
     conda:
@@ -299,7 +262,7 @@ rule plink_score:
     output:
         "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt"
     params:
-        bfile = lambda wc: f"resources/{wc.cohort}_hm3"
+        bfile = lambda wc: f"resources/hm3/{wc.cohort}_hm3"
     conda:
         "envs/plink.yaml"
     shell:
@@ -329,13 +292,13 @@ rule make_pgsc_calc_format:
         """
         awk 'BEGIN {{
           print "#pgs_name={wildcards.cohort}_phi{wildcards.phi}_pst_eff_a1_b0.5_phiauto"
-          print "#trait_reported=Alzheimer\\047s"
+          print "#trait_reported={wildcards.dataset}"
           print "#genome_build=GRCh37"
           print "#pgs_id=custom"
           print "chr_name\\tchr_position\\teffect_allele\\tother_allele\\teffect_weight"
         }}
         {{
-          # In your final PRS-CS file, columns are typically:
+          # In final PRS-CS file, columns are typically:
           # $1=CHR, $2=RSID, $3=POS, $4=A1, $5=A2, $6=WEIGHT
           print $1"\\t"$3"\\t"$4"\\t"$5"\\t"$6
         }}' {input} > {output}

@@ -1,29 +1,20 @@
-import pandas as pd
-import gzip
+import h5py
 
-# File paths
-input_file = "resources/Bellenguez2022load.chrall.CPRA_b37.tsv.gz"
-output_file = "resources/Bellenguez2022load.chrall_b37_standardized.tsv.gz"
+file_path = '/wynton/group/andrews/users/rakshyasharma/PRS/PRS-CS-Auto/resources/PRScs/ld_ref/ldblk_1kg_eur/ldblk_1kg_chr1.hdf5'
 
-# Read compressed TSV file with error handling
-with gzip.open(input_file, "rt", encoding="utf-8") as f:
-        df = pd.read_csv(f, sep="\t", engine="python", dtype=str, on_bad_lines="skip", skiprows=7)
-
-# Check column names before renaming
-print("Original columns:", df.columns.tolist())
-
-# Ensure both columns exist before renaming
-if "OLD_ID" in df.columns and "ID" in df.columns:
-    df = df.rename(columns={"ID": "PREV", "OLD_ID": "ID"})  # Rename ID -> PREV_ID, OLD_ID -> ID
-elif "OLD_ID" in df.columns:  
-    df = df.rename(columns={"OLD_ID": "ID"})  # Just rename OLD_ID -> ID
-else:
-    raise ValueError("ERROR: OLD_ID column not found. Cannot swap RSIDs.")
-
-# Display updated column names
-print("Updated columns:", df.columns.tolist())
-
-# Save the modified DataFrame
-df.to_csv(output_file, sep="\t", index=False, compression="gzip")
-
-print(f"Swapped ID columns. Saved to: {output_file}")
+with h5py.File(file_path, 'r') as f:
+    # List all groups (each representing an LD block)
+    print("Top-level keys:", list(f.keys()))
+    
+    # For example, inspect the first block
+    if 'blk_1' in f:
+        blk1 = f['blk_1']
+        print("Datasets in blk_1:", list(blk1.keys()))
+        
+        # Optionally, check a part of the LD matrix
+        ld_matrix = blk1['ldblk'][()]
+        print("Shape of ldblk in blk_1:", ld_matrix.shape)
+        
+        # Check the SNP list if available
+        snplist = blk1['snplist'][()]
+        print("Number of SNPs in blk_1:", len(snplist))

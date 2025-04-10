@@ -1,0 +1,304 @@
+---
+title: "April_Final_R"
+format: html
+editor: visual
+---
+
+## Data Preparation
+
+```{r}
+fam_file <- "/wynton/group/andrews/users/rakshyasharma/PRS/PRS-CS-Auto/resources/ADGC/adgc.fam"
+covar_file <- "/wynton/group/andrews/data/adgc/ADGCdatasets/covar_covariates.tsv"
+base_dir <- "/wynton/group/andrews/users/rakshyasharma/pgsc_calc/adgc/results"
+
+folder_names <- c(
+  "Day2018sociso",
+  "Evangelou2018dbp",
+  "Evangelou2018pp",
+  "Howard2018dep",
+  "Jansen2018insom",
+  "Klimentidis2018mvpa",
+  "Lee2018educ",
+  "Liu2019drnkwk",
+  "Niarchou2020fish",
+  "Niarchou2020meat",
+  "SanchezRoige2018auditc",
+  "SanchezRoige2018auditp",
+  "SanchezRoige2018auditt",
+  "Willer2013hdl",
+  "Willer2013ldl",
+  "Willer2013tc",
+  "Willer2013tg",
+  "Xu2018diab",
+  "Yengo2018bmi"
+)
+```
+
+
+# Data Cleaning and merging
+
+```{r}
+ library(dplyr)
+library(readr)
+library(broom)
+library(ggplot2)
+library(tidyr)
+
+results_list <- list()
+
+# Loop over each folder (trait)
+for(fn in folder_names) {
+  message("Processing folder: ", fn)
+  
+  # 1. File paths for this folder
+  pca_file <- file.path(base_dir, fn, "adgc", "score", "adgc_popsimilarity.txt.gz")
+  prs_file <- file.path(base_dir, fn, "adgc", "score", "adgc_pgs.txt.gz")
+  
+  # 2. Read in data
+  fam_data <- read.table(fam_file, header = FALSE,
+                         col.names = c("FID", "IID", "PID", "MID", "Sex", "P"))
+  covar_data <- read.table(covar_file, header = TRUE, sep = "\t")
+  pca_data <- read_tsv(pca_file, show_col_types = FALSE)
+  prs_data <- read.table(prs_file, header = TRUE)
+  
+  # 3. Basic cleaning
+  fam_data <- fam_data %>% distinct(IID, .keep_all = TRUE)
+  covar_data <- covar_data %>% distinct(ID_2, .keep_all = TRUE)
+  pca_data <- pca_data %>% distinct(IID, .keep_all = TRUE)
+  prs_data <- prs_data %>% distinct(IID, .keep_all = TRUE)
+  
+  fam_data$IID <- sub("^0_", "", fam_data$IID)
+  fam_data$IID <- ifelse(grepl("^[0]+[0-9]+$", fam_data$IID),
+                         sub("^0+", "", fam_data$IID),
+                         fam_data$IID)
+  
+  covar_data <- covar_data %>% mutate(ID_2 = as.character(ID_2))
+  pca_data <- pca_data %>% mutate(IID = as.character(IID))
+  prs_data <- prs_data %>% mutate(IID = as.character(IID))
+  
+  # 4. Merge the data
+  merged_data <- covar_data %>%
+    left_join(fam_data, by = c("ID_2" = "IID")) %>%
+    left_join(prs_data, by = c("ID_2" = "IID")) %>%
+    left_join(pca_data, by = c("ID_2" = "IID")) %>%
+    distinct() %>%
+    mutate(
+      across(where(is.numeric), ~na_if(., -9)),
+      status_binary = if_else(status == 2, 1, 0),
+      status_binary = factor(status_binary, levels = c(0,1))
+    ) %>%
+    filter(status %in% c(1,2)) %>%
+    drop_na(MostSimilarPop, aaoaae, apoe4any, sex, status)
+  # 5. Fit sex-stratified logistic regressions
+  # Define the model formula (using same predictors for both strata)
+  formula <- status_binary ~ Z_norm2 + aaoaae + apoe4any + PC1 + PC2 + PC3 + PC4
+  
+  # Female model (Sex==2)
+  merged_female <- merged_data %>% filter(Sex == 2)
+  model_female <- glm(formula, data = merged_female, family = binomial())
+  
+  # Male model (Sex==1)
+  merged_male <- merged_data %>% filter(Sex == 1)
+  model_male <- glm(formula, data = merged_male, family = binomial())
+  
+  # 6. Manually compute Wald CIs for the Z_norm2 term
+  zval <- qnorm(0.975)
+  
+  # Female results for Z_norm2
+  tidy_female <- broom::tidy(model_female, conf.int = FALSE) %>% 
+    filter(term == "Z_norm2") %>%
+    mutate(folder = fn, sex_strata = "Female", estimate_or = exp(estimate))
+  coefs_female <- summary(model_female)$coefficients
+  if("Z_norm2" %in% rownames(coefs_female)) {
+    ci_female <- data.frame(
+      term = "Z_norm2",
+      conf.low = coefs_female["Z_norm2", "Estimate"] - zval * coefs_female["Z_norm2", "Std. Error"],
+      conf.high = coefs_female["Z_norm2", "Estimate"] + zval * coefs_female["Z_norm2", "Std. Error"]
+    )
+    tidy_female <- tidy_female %>%
+      left_join(ci_female, by = "term") %>%
+      mutate(
+        conf.low_or = exp(conf.low),
+        conf.high_or = exp(conf.high)
+      )
+  }
+
+  # Male results for Z_norm2
+  tidy_male <- broom::tidy(model_male, conf.int = FALSE) %>% 
+    filter(term == "Z_norm2") %>%
+    mutate(folder = fn, sex_strata = "Male", estimate_or = exp(estimate))
+  coefs_male <- summary(model_male)$coefficients
+  if("Z_norm2" %in% rownames(coefs_male)) {
+    ci_male <- data.frame(
+      term = "Z_norm2",
+      conf.low = coefs_male["Z_norm2", "Estimate"] - zval * coefs_male["Z_norm2", "Std. Error"],
+      conf.high = coefs_male["Z_norm2", "Estimate"] + zval * coefs_male["Z_norm2", "Std. Error"]
+    )
+    tidy_male <- tidy_male %>%
+      left_join(ci_male, by = "term") %>%
+      mutate(
+        conf.low_or = exp(conf.low),
+        conf.high_or = exp(conf.high)
+      )
+  }
+  
+  # 7. Combine female and male results for this folder
+  folder_result <- bind_rows(tidy_female, tidy_male)
+  results_list[[fn]] <- folder_result
+}
+
+# Combine results from all folders
+all_results <- bind_rows(results_list)
+
+# Peek at the final combined results
+head(all_results)
+```
+
+## plot
+
+```{r}
+
+coefficient_plot <- ggplot(all_results, aes(
+  x = reorder(folder, estimate_or), 
+  y = estimate_or,
+  ymin = conf.low_or,
+  ymax = conf.high_or,
+  color = sex_strata
+)) +
+  geom_pointrange(position = position_dodge(width = 0.5)) +
+  geom_errorbar(width = 0.3, position = position_dodge(width = 0.5)) +
+  coord_flip() +
+  scale_x_discrete(labels = c(
+    "Yengo2018bmi"   = "BMI",
+    "Day2018sociso"  = "Social Isolation",
+    "Jansen2018insom" = "Insomnia",
+    "Lee2018educ"    = "Education",
+    "Evangelou2018dbp" = "Diastolic BP",
+    "Evangelou2018pp" = "Pulse Pressure",
+    "Howard2018dep" = "Depression",
+    "Klimentidis2018mvpa" = "Physical Activity",
+    "Liu2019drnkwk" = "Alchol Consumption",
+    "Niarchou2020fish" = "Fish and plant related diet",
+    "Niarchou2020meat" = "Meat related diet",
+    "SanchezRoige2018auditc" = "AUDITC ",
+    "SanchezRoige2018auditp" = "AUDITP",
+    "SanchezRoige2018auditt" = "AUDITT",
+    "Willer2013hdl" = "HDL Cholesterol",
+    "Willer2013ldl" = "LDL Cholesterol",
+    "Willer2013tc" = "Total Cholesterol",
+    "Willer2013tg" = "Triglycerides",
+    "Xu2018diab" = "Type 2 Diabetes"
+  )) +
+  labs(
+    x = "Traits",
+    y = "Odds Ratio (95% CI)",
+    caption = "Fig 1: Effect of PRS (Z_norm2) on AD Status by Sex",
+    color = "Sex"
+  ) +
+  theme_minimal(base_size = 14, base_family = "Arial") +
+  theme(
+    # Make axis texts and titles dark and clear
+    axis.text = element_text(color = "black", size = 12),
+    axis.title = element_text(color = "black", size = 14),
+    # Style the plot title with bold text
+    plot.caption = element_text(color = "black", size = 16, face = "bold"),
+    # Ensure the legend text is legible
+    legend.title = element_text(color = "black", size = 12),
+    legend.text = element_text(color = "black", size = 10)
+  )
+
+# Save the plot as a PNG file
+ggsave("/wynton/group/andrews/users/rakshyasharma/pgsc_calc/adgc/results/coefficient_plot.png", coefficient_plot, width = 8, height = 6, dpi = 600)
+
+```
+## Table1
+```{r}
+
+library(tidyr)
+library(gtsummary)
+library(dplyr)
+library(gt)
+
+
+table_1 <- merged_data%>%
+  filter(!MostSimilarPop %in% c("CSA", "MID")) %>%
+  select(MostSimilarPop, aaoaae, sex, status, apoe4any) %>%
+  rename(
+    age = aaoaae,
+    Ancestry = MostSimilarPop,
+    apoe = apoe4any
+  ) %>%
+  mutate(
+    sex = factor(sex, levels = c(1, 2), labels = c("Male", "Female")),
+    status = factor(status, levels = c(1, 2), labels = c("Unaffected", "Affected"))
+  )
+
+table1_summary <- table_1 %>%
+  tbl_summary(
+    by = sex,
+    statistic = list(
+      all_categorical() ~ "{n} / {N} ({p}%)"
+    )
+  ) %>%
+  add_overall() %>%
+  add_n()
+table1_gt <- as_gt(table1_summary)
+gtsave(table1_gt, filename = "/wynton/group/andrews/users/rakshyasharma/pgsc_calc/adgc/results/table1.html")
+```
+
+## More analysis
+
+```{r}
+library(tidyr)
+
+# Add significance stars
+all_results <- all_results %>%
+  mutate(
+    signif = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01  ~ "**",
+      p.value < 0.05  ~ "*",
+      TRUE            ~ ""
+    )
+  )
+
+# Compute OR difference (using the PRS term only) for each trait:
+or_diff_df <- all_results %>%
+  filter(term == "Z_norm2") %>%
+  select(folder, sex_strata, estimate_or) %>%
+  pivot_wider(names_from = sex_strata, values_from = estimate_or) %>%
+  mutate(or_diff = abs(Female - Male)) %>%
+  arrange(desc(or_diff))
+
+# Order traits by the difference magnitude
+all_results$folder <- factor(all_results$folder, levels = or_diff_df$folder)
+
+library(ggplot2)
+
+forest_plot <- ggplot(all_results %>% filter(term == "Z_norm2"), aes(
+  x = folder,
+  y = estimate_or,
+  ymin = conf.low_or,
+  ymax = conf.high_or,
+  color = sex_strata
+)) +
+  geom_pointrange(position = position_dodge(width = 0.6)) +
+  geom_errorbar(width = 0.3, position = position_dodge(width = 0.6)) +
+  geom_text(aes(label = signif), position = position_dodge(width = 0.6), vjust = -1, size = 3) +
+  coord_flip() +
+  labs(
+    x = "Traits (ordered by sex difference)",
+    y = "Odds Ratio (95% CI)",
+    title = "Effect of PRS (Z_norm2) on AD Status by Sex",
+    color = "Sex"
+  ) +
+  theme_minimal()
+
+forest_plot
+# Save the coefficient (forest) plot as a PNG file
+ggsave("/wynton/group/andrews/users/rakshyasharma/pgsc_calc/adgc/results/coefficient_plot_pval.png", forest_plot, width = 8, height = 6, dpi = 600)
+
+
+
+```
+

@@ -23,7 +23,7 @@ pvar.raw <- read_tsv(input_pvar) %>%
 # 2. Simulate GWAS summary statistics using GWASBrewer
 dat_simple <- GWASBrewer::sim_mv(
   G = 1,        # simulation parameter: number of traits
-  N = 500000,   # sample size
+  N = 4196466,   # sample size
   J = nrow(pvar.raw), # number of variants
   h2 = 0.5,     # heritability
   pi = 0.01,    # proportion of causal variants

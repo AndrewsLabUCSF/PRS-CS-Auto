@@ -7,6 +7,9 @@ data/
 # Ignore results
 results/
 
+#Ignore work
+work/
+
 # Ignore Snakemake logs
 .snakemake/
 
