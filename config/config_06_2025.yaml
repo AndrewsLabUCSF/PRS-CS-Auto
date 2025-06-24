@@ -1,0 +1,94 @@
+#snakemake -j 100 --executor sge-wynton --use-conda --use-singularity --configfile config/config_06_2025.yaml
+
+# Define cohort(s) for PRS calculation
+cohort:
+  HABSHD:  # Example cohort name
+    genotype: "resources/HABSHD/HABSHD_snp_subset"
+    file_type: "bfile"
+    genome_build: "GRCh38"
+
+# Summary statistics files for each population
+summary_statistics:
+  Okbay2022educ:
+    sst_file: "resources/Okbay2022educ.b37.chrall.tsv.gz"
+    sample_size: 3037499
+  Lee2018educ:
+    sst_file: "resources/Lee2018educ.chrall.CPRA_b37.tsv.gz"
+    sample_size: 1131881
+  Huang2017aaos:
+    sst_file: "resources/Huang2017aaos.chrall.CPRA_b37.tsv.gz"
+    sample_size: 40255
+  Bellenguez2022load:
+    sst_file: "resources/Bellenguez2022load.chrall.CPRA_b37.tsv.gz"
+    sample_size: 487511
+  Liu2019drnkwk:
+    sst_file: "resources/Liu2019drnkwk.chrall.CPRA_b37.tsv.gz"
+    sample_size: 941280
+  Evangelou2018sbp:
+    sst_file: "resources/Evangelou2018sbp.chrall.CPRA_b37.tsv.gz"
+    sample_size: 1070751  # Adjust based on study
+  SanchezRoige2018auditc:
+    sst_file: "resources/SanchezRoige2018auditc.chrall.CPRA_b37.tsv.gz"
+    sample_size: 121604
+  SanchezRoige2018auditp:
+    sst_file: "resources/SanchezRoige2018auditp.chrall.CPRA_b37.tsv.gz"
+    sample_size: 121604
+  SanchezRoige2018auditt:
+    sst_file: "resources/SanchezRoige2018auditt.chrall.CPRA_b37.tsv.gz"
+    sample_size: 141932
+  Klimentidis2018mvpa:
+    sst_file: "resources/Klimentidis2018mvpa.chrall.CPRA_b37.tsv.gz"
+    sample_size: 377234
+  Willer2013hdl:
+    sst_file: "resources/Willer2013hdl.chrall.CPRA_b37.tsv.gz"
+    sample_size: 188577 
+  Willer2013ldl:
+    sst_file: "resources/Willer2013ldl.chrall.CPRA_b37.tsv.gz"
+    sample_size: 188577
+  Willer2013tg:
+    sst_file: "resources/Willer2013tg.chrall.CPRA_b37.tsv.gz"
+    sample_size: 188577
+  Willer2013tc:
+    sst_file: "resources/Willer2013tc.chrall.CPRA_b37.tsv.gz"
+    sample_size: 188577
+  Evangelou2018pp:
+    sst_file: "resources/Evangelou2018pp.chrall.CPRA_b37.tsv.gz"
+    sample_size: 1006863
+  Evangelou2018dbp:
+    sst_file: "resources/Evangelou2018dbp.chrall.CPRA_b37.tsv.gz"
+    sample_size: 1006863
+  Xu2018diab:
+    sst_file: "resources/Xu2018diab.chrall.CPRA_b37.tsv.gz"
+    sample_size: 659316
+  Yengo2018bmi:
+    sst_file: "resources/Yengo2018bmi.chrall.CPRA_b37.tsv.gz"
+    sample_size: 700000
+  Yengo2018height:
+    sst_file: "resources/Yengo2018height.chrall.CPRA_b37.tsv.gz"
+    sample_size: 700000
+  Niarchou2020fish:
+    sst_file: "resources/Niarchou2020fish.chrall.CPRA_b37.tsv.gz"
+    sample_size: 335576
+  Niarchou2020meat:
+    sst_file: "resources/Niarchou2020meat.chrall.CPRA_b37.tsv.gz"
+    sample_size: 335576
+  Howard2018dep:
+    sst_file: "resources/Howard2018dep.chrall.CPRA_b37.tsv.gz"
+    sample_size: 807553
+  Jansen2018insom:
+    sst_file: "resources/Jansen2018insom.chrall.CPRA_b37.tsv.gz"
+    sample_size: 1331010 
+
+# PRS-CS Auto parameters
+PRScs-auto:
+  chromosomes: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22]  # Chromosomes to analyze
+  #chromosomes: [21,22]
+  phi: "auto"  # Auto-tune shrinkage parameter
+  meta: False  # Set to True if using PRS-CSx (multi-population)
+  sst_file: "work/formatted/{dataset}_formated_ss.txt"
+  ref_ld: "resources/PRScs/ld_ref/ldblk_1kg_eur"
+
+apoe:
+  chrom: 19
+  start: 44408822
+  end: 45408822

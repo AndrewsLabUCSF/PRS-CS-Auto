@@ -1,16 +1,19 @@
-#snakemake -j 10 --executor sge-wynton --use-conda --use-singularity --max-jobs-per-second 1
+#snakemake -j 50 --executor sge-wynton --use-conda --use-singularity
+#snakemake -j 50 --executor sge-wynton --use-conda --use-singularity --configfile config/config_aadrita_2.yaml
 
 # Define cohort(s) for PRS calculation
 cohort:
   ADGC:  # Example cohort name
     genotype: "resources/ADGC/out"
+    file_type: "pvar"
     genome_build: "GRCh38"
 
-# Summary statistics files for each population
 summary_statistics:
-  Okbay2022educ:
-    sst_file: "data/Okbay2022educ.b37.chrall.tsv.gz"
-    sample_size: 3037499
+  Gupta2023mtDNAcn:
+      sst_file: "/data/Gupta2023mtDNAcn.b37.chrall.tsv.gz"
+      sample_size: 163372
+
+  
 
 # PRS-CS Auto parameters
 PRScs-auto:
@@ -20,3 +23,8 @@ PRScs-auto:
   meta: False  # Set to True if using PRS-CSx (multi-population)
   sst_file: "work/formatted/{dataset}_formated_ss.txt"
   ref_ld: "resources/PRScs/ld_ref/ldblk_1kg_eur"
+
+apoe:
+  chrom: 19
+  start: 44408822
+  end: 45408822

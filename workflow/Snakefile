@@ -1,12 +1,24 @@
 ################################################################################
 # SNAKEMAKE SETUP
 ################################################################################
+import glob
+import os
+def choose_prscs_input(wc):
+    pattern = f"resources/{wc.dataset}*.tsv.gz"
+    candidates = glob.glob(pattern)
+    if not candidates:
+        raise ValueError(f"No file found matching {pattern}")
+    if len(candidates) > 1:
+        print(f"Warning: multiple matches for {wc.dataset}, using first: {candidates}")
+    chosen = candidates[0]
+    print(f"Using summary‐stats file for dataset {wc.dataset}: {chosen}")
+    return chosen
 
 from snakemake.utils import min_version
 min_version("8.0")
 
 
-configfile: 'config/config_aadrita.yaml'
+#configfile: 'config/config_aadrita_2.yaml'
 # Extract dataset names dynamically
 DATASETS = list(config["summary_statistics"].keys()) 
 
@@ -25,7 +37,6 @@ PHIS    = config["PRScs-auto"]["phi"]
 #print("Loaded phis:", PHIS)
 
 
-
 # Summary statistics
 #POPULATION = list(config["summary_statistics"].keys())
 #SAMPLE_SIZES = [str(details["sample_size"]) for details in config["summary_statistics"].values()]
@@ -36,30 +47,40 @@ SST = config["PRScs-auto"]["sst_file"]
 REF_LD = config["PRScs-auto"]["ref_ld"]
 #print("Loaded reference LD:", REF_LD)
 
+# APOE region configuration
+APOE_CHR   = config["apoe"]["chrom"]
+APOE_START = config["apoe"]["start"]
+APOE_END   = config["apoe"]["end"]
+
 shell.executable('/bin/bash')
+#localrules: rule munge_variant
 ################################################################################
 # FINAL RULE: Compile all resulting score files
 ################################################################################
 rule all:
     input:
         expand(
-            "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_pgsc_calc.txt",
+            "results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_pgsc_calc.txt",
             dataset=DATASETS,
-            cohort=COHORTS if COHORTS else ["ADGC"],# Fallback default
+            cohort=COHORTS,
             phi=PHIS
         ),
         expand(
-            "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt",
+            "results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt",
             dataset=DATASETS,
-            cohort=COHORTS if COHORTS else ["ADGC"],# Fallback default
+            cohort=COHORTS,
             phi=PHIS
         ),
         expand(
-            "results/{dataset}/{cohort}_phi{phi}_chrAll.txt",
+            "results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll.txt",
             dataset=DATASETS,
-            cohort=COHORTS if COHORTS else ["ADGC"],# Fallback default
+            cohort=COHORTS,
             phi=PHIS
-        )
+        )#,
+        #expand(
+        #    "results/{cohort}_hm3_additive.raw",
+        #    cohort=COHORTS if COHORTS else ["ADGC"]
+        #)
 
 ################################################################################
 # RULE 1: MUNGE SUMMARY STATISTICS
@@ -68,35 +89,40 @@ rule format_prscs:
     """
     Converts raw summary statistics into a format suitable for PRS-CS Auto.
     """
-    input: 
-        "data/{dataset}.chrall.CPRA_b37.tsv.gz"
+    input:
+        raw = choose_prscs_input
     output:
-        "work/formatted/{dataset}_formated_ss.txt"
-    singularity: "docker://codewithrakshya/mungesumstats_docker"
+        temp("work/formatted/{dataset}_formated_ss.txt")
+    singularity:
+        "docker://codewithrakshya/mungesumstats_docker"
     threads: 2
     resources:
         mem_mb=32000,
         time_min=1200
     script:
-        'scripts/format_sumstats.R'
+        "scripts/format_sumstats.R"
 
 ################################################################################
 # RULE 2: MUNGE BIM / PVAR -> BED/BIM/FAM
 ################################################################################
-rule munge_bim:
+rule munge_variant:
     """
-    Reads a .pvar file, reformats it, and generates a SNP mapping file (cpra2rsids.txt).
+    Build cohort_cpra2rsids.txt from .pvar or .bim depending on config[cohort][file_type]
     """
     input:
-        pvar="resources/{cohort}/out.pvar"
+        variant = lambda wc: config["cohort"][wc.cohort]["genotype"] + (
+            ".pvar" if config["cohort"][wc.cohort]["file_type"] == "pfile" else ".bim"
+        )
     output:
-        name_file="resources/{cohort}/cpra2rsids.txt"
+        name_file = "resources/{cohort}/{cohort}_cpra2rsids.txt"
+    params:
+        geno_prefix = lambda wc: config["cohort"][wc.cohort]["genotype"]
     singularity: "docker://codewithrakshya/mungesumstats_docker"
     threads: 1
     resources:
-        mem_mb=8000,
+        mem_mb=8000,   # 8 GB
         time_min=300
-    script: "scripts/munge_bim.R"
+    script: "scripts/munge_variant.R"
 
 
 ################################################################################
@@ -104,26 +130,24 @@ rule munge_bim:
 ################################################################################
 
 rule run_plink:
-    """
-    Uses PLINK2 to update variant IDs in the genotype files.
-    """
     input:
-        name_file="resources/{cohort}/cpra2rsids.txt"
+        name_file = "resources/{cohort}/{cohort}_cpra2rsids.txt"
     output:
-        bed="resources/{cohort}/adgc.bed",
-        bim="resources/{cohort}/adgc.bim",
-        fam="resources/{cohort}/adgc.fam"
+        bed = "resources/{cohort}/{cohort}.bed",
+        bim = "resources/{cohort}/{cohort}.bim",
+        fam = "resources/{cohort}/{cohort}.fam"
     params:
-        plink_prefix="resources/ADGC/out",
-        plink_out="resources/ADGC/adgc"
+        plink_prefix = lambda wc: config["cohort"][wc.cohort]["genotype"],
+        file_type    = lambda wc: config["cohort"][wc.cohort]["file_type"],
+        plink_out    = lambda wc: f"resources/{wc.cohort}/{wc.cohort}"
     conda : "envs/plink.yaml"
-    threads: 4
+    threads: 2
     resources:
         mem_mb=16000,  # 16GB RAM
         time_min=600   # 10 hours
     shell:
         """
-        plink2 --pfile {params.plink_prefix} \
+        plink2 --{params.file_type} {params.plink_prefix} \
                --update-name {input.name_file} \
                --keep-allele-order \
                --make-bed \
@@ -166,7 +190,7 @@ rule plink_filter:
         time_min=600   # 10 hours
     shell:
         """
-        plink --bfile resources/{wildcards.cohort}/adgc \
+        plink --bfile resources/{wildcards.cohort}/{wildcards.cohort} \
               --extract {input.hm3} \
               --make-bed \
               --out resources/hm3/{wildcards.cohort}_hm3
@@ -187,7 +211,7 @@ rule prscs_auto:
             f"resources/hm3/{wc.cohort}_hm3.bim",
             f"resources/hm3/{wc.cohort}_hm3.fam"]
     output:
-        "results/{dataset}/{cohort}_pst_eff_a1_b0.5_phi{phi}_chr{chrom}.txt"
+        temp("results/{cohort}/{dataset}/{cohort}_pst_eff_a1_b0.5_phi{phi}_chr{chrom}.txt")
     params:
         #bim_prefix = f"resources/{COHORTS[0]}_hm3",
         bim_prefix = lambda wc: f"resources/hm3/{wc.cohort}_hm3",
@@ -213,7 +237,7 @@ rule prscs_auto:
           --n_gwas={params.n} \
           --chrom={params.chrom} \
             {params.phi_arg} \
-          --out_dir=results/{wildcards.dataset}/{wildcards.cohort}
+          --out_dir=results/{wildcards.cohort}/{wildcards.dataset}/{wildcards.cohort}
         """
 
 ################################################################################
@@ -225,29 +249,49 @@ rule concat_chrom_files:
     """
     input:
         expand(
-            "results/{{dataset}}/{{cohort}}_pst_eff_a1_b0.5_phi{{phi}}_chr{chrom}.txt",
+            "results/{{cohort}}/{{dataset}}/{{cohort}}_pst_eff_a1_b0.5_phi{{phi}}_chr{chrom}.txt",
             dataset=DATASETS,
             chrom=CHROMS
         )
     output:
-        "results/{dataset}/{cohort}_phi{phi}_chrAll.txt"
+        temp("results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll.txt")
     shell:
         "cat {input} > {output}"
 
 ################################################################################
-# RULE 7: REMOVE APOE REGION
+# RULE 7: REMOVE APOE REGION (optional)
 ################################################################################
 rule rm_apoe:
     """
-    Removes the APOE region (chr19:44,408,822-45,408,822) from final PRS weights.
+    If an `apoe:` section exists in config, removes that region;
+    otherwise passes the file through unmodified.
     """
-    input:rules.concat_chrom_files.output
+    input:
+        rules.concat_chrom_files.output
     output:
-        "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
-    shell:
-        """
-        awk '$1 != 19 || ($1 == 19 && ($3 < 44408822 || $3 > 45408822))' {input} > {output}
-        """
+        temp("results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE.txt")
+    params:
+        # Will be None if absent
+        apoe_cfg = config.get("apoe", None)
+    threads: 1
+    resources:
+        mem_mb=8000,  # 8GB RAM
+        time_min=300  # 5 hours
+    run:
+        inp = input[0]
+        out = output[0]
+        if params.apoe_cfg:
+            chr   = params.apoe_cfg["chrom"]
+            start = params.apoe_cfg["start"]
+            end   = params.apoe_cfg["end"]
+            shell(
+                r"""
+                awk '$1 != {chr} || \
+                    ($1 == {chr} && ($3 < {start} || $3 > {end}))' {inp} > {out}
+                """.format(chr=chr, start=start, end=end, inp=inp, out=out)
+            )
+        else:
+            shell("cp {inp} {out}".format(inp=inp, out=out))
 
 ################################################################################
 # RULE 8: SCORE WITH PLINK
@@ -260,18 +304,22 @@ rule plink_score:
         bfiles  = rules.plink_filter.output,
         weights = rules.rm_apoe.output
     output:
-        "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt"
+        temp("results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt")
     params:
         bfile = lambda wc: f"resources/hm3/{wc.cohort}_hm3"
     conda:
         "envs/plink.yaml"
+    threads: 2
+    resources:
+        mem_mb=16000,  # 16GB RAM
+        time_min=600   # 10 hours
     shell:
         """
         plink --bfile {params.bfile} \
               --score {input.weights} 2 4 6 sum \
-              --out results/{wildcards.dataset}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores
+              --out results/{wildcards.cohort}/{wildcards.dataset}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores
 
-        mv results/{wildcards.dataset}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores.profile {output}
+        mv results/{wildcards.cohort}/{wildcards.dataset}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores.profile {output}
         """
 
 ################################################################################
@@ -283,10 +331,10 @@ rule make_pgsc_calc_format:
     """
     input:
         # Takes the rm_apoe output
-        "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
+        "results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
     output:
         # The new pgsc_calc-formatted file
-        "results/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_pgsc_calc.txt"
+        "results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_pgsc_calc.txt"
     shell:
         # Example approach using awk
         """
