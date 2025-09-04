@@ -12,8 +12,22 @@ summary_statistics:
   Gupta2023mtDNAcn:
       sst_file: "/data/Gupta2023mtDNAcn.b37.chrall.tsv.gz"
       sample_size: 163372
+      genome_build: "GRCh37"
 
-  
+  Chong2022mtdnacn_eur:
+      sst_file: "data/Chong2022mtdnacn_eur.chrall.CPRA_b37.tsv.gz"
+      sample_size: 395718
+      genome_build: "GRCh37"
+
+  Hagg2020mtdnacn:
+      sst_file: "data/Hagg2020mtdnacn.chrall.CPRA_b37.tsv.gz"
+      sample_size: 286381
+      genome_build: "GRCh37" 
+
+  Longchamps2021mtdnacn:
+      sst_file: "data/Longchamps2021mtdnacn.chrall.CPRA_b37.tsv.gz"
+      sample_size: 470579
+      genome_build: "GRCh37"
 
 # PRS-CS Auto parameters
 PRScs-auto:
@@ -24,7 +38,7 @@ PRScs-auto:
   sst_file: "work/formatted/{dataset}_formated_ss.txt"
   ref_ld: "resources/PRScs/ld_ref/ldblk_1kg_eur"
 
-apoe:
+apoe: #build37
   chrom: 19
-  start: 44408822
-  end: 45408822
+  start: 44909053
+  end: 45912650

@@ -4,7 +4,7 @@
 import glob
 import os
 def choose_prscs_input(wc):
-    pattern = f"resources/{wc.dataset}*.tsv.gz"
+    pattern = f"data/{wc.dataset}*.tsv.gz"
     candidates = glob.glob(pattern)
     if not candidates:
         raise ValueError(f"No file found matching {pattern}")
@@ -44,9 +44,10 @@ SAMPLE_SIZES = lambda wc: config["summary_statistics"][wc.dataset]["sample_size"
 SS = [details["sst_file"] for details in config["summary_statistics"].values()]
 SST = config["PRScs-auto"]["sst_file"]
 #print("Loaded summary statistics:", SS)
+LD_BUILD   = config["PRScs-auto"].get("ld_build", "GRCh37") # Default to GRCh37 if not specified
 REF_LD = config["PRScs-auto"]["ref_ld"]
 #print("Loaded reference LD:", REF_LD)
-
+APPEND_COORDS = config["PRScs-auto"].get("append_coords_from_sumstats", False)
 # APOE region configuration
 APOE_CHR   = config["apoe"]["chrom"]
 APOE_START = config["apoe"]["start"]
@@ -92,7 +93,7 @@ rule format_prscs:
     input:
         raw = choose_prscs_input
     output:
-        temp("work/formatted/{dataset}_formated_ss.txt")
+        "work/{cohort}/formatted/{dataset}_formated_ss.txt"
     singularity:
         "docker://codewithrakshya/mungesumstats_docker"
     threads: 2
@@ -197,7 +198,7 @@ rule plink_filter:
         """
 
 ################################################################################
-# RULE 5: RUN PRS-CS AUTO (per chromosome, per cohort, per PHI)
+# RULE 5: RUN PRS-CS AUTO (per chromosome, per cohort, per PHI) - Posterior effect size estimate → the estimated weight (beta coefficient) for A1 after PRS-CS’s Bayesian shrinkage. This is what you’d use to compute a polygenic score.
 ################################################################################
 
 rule prscs_auto:
@@ -205,13 +206,13 @@ rule prscs_auto:
     Runs PRS-CS Auto for each chromosome.
     """
     input:
-        summary_stats = "work/formatted/{dataset}_formated_ss.txt",
+        summary_stats = "work/{cohort}/formatted/{dataset}_formated_ss.txt",
         bfiles = lambda wc: [
             f"resources/hm3/{wc.cohort}_hm3.bed",
             f"resources/hm3/{wc.cohort}_hm3.bim",
             f"resources/hm3/{wc.cohort}_hm3.fam"]
     output:
-        temp("results/{cohort}/{dataset}/{cohort}_pst_eff_a1_b0.5_phi{phi}_chr{chrom}.txt")
+        "results/{cohort}/{dataset}/{cohort}_pst_eff_a1_b0.5_phi{phi}_chr{chrom}.txt"
     params:
         #bim_prefix = f"resources/{COHORTS[0]}_hm3",
         bim_prefix = lambda wc: f"resources/hm3/{wc.cohort}_hm3",
@@ -254,12 +255,14 @@ rule concat_chrom_files:
             chrom=CHROMS
         )
     output:
-        temp("results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll.txt")
+        "results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll.txt"
     shell:
         "cat {input} > {output}"
 
 ################################################################################
 # RULE 7: REMOVE APOE REGION (optional)
+#add a check based on the build mentioned in the summary stats and also if else. 
+#rerun the config files for aadrita and all the
 ################################################################################
 rule rm_apoe:
     """
@@ -269,7 +272,7 @@ rule rm_apoe:
     input:
         rules.concat_chrom_files.output
     output:
-        temp("results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE.txt")
+        "results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
     params:
         # Will be None if absent
         apoe_cfg = config.get("apoe", None)
@@ -304,7 +307,7 @@ rule plink_score:
         bfiles  = rules.plink_filter.output,
         weights = rules.rm_apoe.output
     output:
-        temp("results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt")
+        "results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_scores.txt"
     params:
         bfile = lambda wc: f"resources/hm3/{wc.cohort}_hm3"
     conda:
@@ -322,6 +325,7 @@ rule plink_score:
         mv results/{wildcards.cohort}/{wildcards.dataset}/{wildcards.cohort}_{wildcards.phi}_chrAll_noAPOE_scores.profile {output}
         """
 
+
 ################################################################################
 # RULE 9: COMPILE ALL SCORE FILES FOR PGSC_CALC
 ################################################################################
@@ -330,24 +334,27 @@ rule make_pgsc_calc_format:
     Convert the final PRS-CS Auto output (after APOE removal) into a pgsc_calc-compatible file.
     """
     input:
-        # Takes the rm_apoe output
         "results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE.txt"
     output:
-        # The new pgsc_calc-formatted file
         "results/{cohort}/{dataset}/{cohort}_phi{phi}_chrAll_noAPOE_pgsc_calc.txt"
+    params:
+        #genome_build = lambda wc: config["summary_statistics"][wc.dataset]["genome_build"]
+        genome_build = LD_BUILD  # Use LD reference build for header
+    threads: 1
+    resources:
+        mem_mb=8000,  # 8GB RAM
+        time_min=300  # 5 hours
     shell:
-        # Example approach using awk
-        """
-        awk 'BEGIN {{
+        r"""
+        awk -v build={params.genome_build} 'BEGIN {{
           print "#pgs_name={wildcards.cohort}_phi{wildcards.phi}_pst_eff_a1_b0.5_phiauto"
           print "#trait_reported={wildcards.dataset}"
-          print "#genome_build=GRCh37"
+          print "#genome_build=" build
           print "#pgs_id=custom"
-          print "chr_name\\tchr_position\\teffect_allele\\tother_allele\\teffect_weight"
+          print "chr_name\tchr_position\teffect_allele\tother_allele\teffect_weight"
         }}
         {{
-          # In final PRS-CS file, columns are typically:
-          # $1=CHR, $2=RSID, $3=POS, $4=A1, $5=A2, $6=WEIGHT
-          print $1"\\t"$3"\\t"$4"\\t"$5"\\t"$6
+          print $1"\t"$3"\t"$4"\t"$5"\t"$6
         }}' {input} > {output}
         """
+

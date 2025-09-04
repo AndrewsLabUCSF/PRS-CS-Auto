@@ -12,72 +12,91 @@ summary_statistics:
   Okbay2022educ:
     sst_file: "resources/Okbay2022educ.b37.chrall.tsv.gz"
     sample_size: 3037499
+    genome_build: "GRCh37"
   Lee2018educ:
     sst_file: "resources/Lee2018educ.chrall.CPRA_b37.tsv.gz"
     sample_size: 1131881
-  Huang2017aaos:
-    sst_file: "resources/Huang2017aaos.chrall.CPRA_b37.tsv.gz"
-    sample_size: 40255
+    genome_build: "GRCh37"
   Bellenguez2022load:
     sst_file: "resources/Bellenguez2022load.chrall.CPRA_b37.tsv.gz"
     sample_size: 487511
+    genome_build: "GRCh37"
   Liu2019drnkwk:
     sst_file: "resources/Liu2019drnkwk.chrall.CPRA_b37.tsv.gz"
     sample_size: 941280
+    genome_build: "GRCh37"
   Evangelou2018sbp:
     sst_file: "resources/Evangelou2018sbp.chrall.CPRA_b37.tsv.gz"
-    sample_size: 1070751  # Adjust based on study
+    sample_size: 1070751
+    genome_build: "GRCh37"
   SanchezRoige2018auditc:
     sst_file: "resources/SanchezRoige2018auditc.chrall.CPRA_b37.tsv.gz"
     sample_size: 121604
+    genome_build: "GRCh37"
   SanchezRoige2018auditp:
     sst_file: "resources/SanchezRoige2018auditp.chrall.CPRA_b37.tsv.gz"
     sample_size: 121604
+    genome_build: "GRCh37"
   SanchezRoige2018auditt:
     sst_file: "resources/SanchezRoige2018auditt.chrall.CPRA_b37.tsv.gz"
     sample_size: 141932
+    genome_build: "GRCh37"
   Klimentidis2018mvpa:
     sst_file: "resources/Klimentidis2018mvpa.chrall.CPRA_b37.tsv.gz"
     sample_size: 377234
+    genome_build: "GRCh37"
   Willer2013hdl:
     sst_file: "resources/Willer2013hdl.chrall.CPRA_b37.tsv.gz"
-    sample_size: 188577 
+    sample_size: 188577
+    genome_build: "GRCh37"
   Willer2013ldl:
     sst_file: "resources/Willer2013ldl.chrall.CPRA_b37.tsv.gz"
     sample_size: 188577
+    genome_build: "GRCh37"
   Willer2013tg:
     sst_file: "resources/Willer2013tg.chrall.CPRA_b37.tsv.gz"
     sample_size: 188577
+    genome_build: "GRCh37"
   Willer2013tc:
     sst_file: "resources/Willer2013tc.chrall.CPRA_b37.tsv.gz"
     sample_size: 188577
+    genome_build: "GRCh37"
   Evangelou2018pp:
     sst_file: "resources/Evangelou2018pp.chrall.CPRA_b37.tsv.gz"
     sample_size: 1006863
+    genome_build: "GRCh37"
   Evangelou2018dbp:
     sst_file: "resources/Evangelou2018dbp.chrall.CPRA_b37.tsv.gz"
     sample_size: 1006863
+    genome_build: "GRCh37"
   Xu2018diab:
     sst_file: "resources/Xu2018diab.chrall.CPRA_b37.tsv.gz"
     sample_size: 659316
+    genome_build: "GRCh37"
   Yengo2018bmi:
     sst_file: "resources/Yengo2018bmi.chrall.CPRA_b37.tsv.gz"
     sample_size: 700000
+    genome_build: "GRCh37"
   Yengo2018height:
     sst_file: "resources/Yengo2018height.chrall.CPRA_b37.tsv.gz"
     sample_size: 700000
+    genome_build: "GRCh37"
   Niarchou2020fish:
     sst_file: "resources/Niarchou2020fish.chrall.CPRA_b37.tsv.gz"
     sample_size: 335576
+    genome_build: "GRCh37"
   Niarchou2020meat:
     sst_file: "resources/Niarchou2020meat.chrall.CPRA_b37.tsv.gz"
     sample_size: 335576
+    genome_build: "GRCh37"
   Howard2018dep:
     sst_file: "resources/Howard2018dep.chrall.CPRA_b37.tsv.gz"
     sample_size: 807553
+    genome_build: "GRCh37"
   Jansen2018insom:
     sst_file: "resources/Jansen2018insom.chrall.CPRA_b37.tsv.gz"
-    sample_size: 1331010 
+    sample_size: 1331010
+    genome_build: "GRCh37"
 
 # PRS-CS Auto parameters
 PRScs-auto:

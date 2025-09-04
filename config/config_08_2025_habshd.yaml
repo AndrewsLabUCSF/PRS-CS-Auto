@@ -1,0 +1,97 @@
+#snakemake -j 100 --executor sge-wynton --use-conda --use-singularity --configfile config/config_08_2025_habshd.yaml
+# Define cohort(s) for PRS calculation
+cohort:
+  HABSHD:  # Example cohort name
+    genotype: "resources/HABSHD/HABSHD_snp_subset"
+    file_type: "bfile"
+    genome_build: "GRCh38"
+
+# Summary statistics files for each population
+summary_statistics:
+  # Okbay2022educ:
+  #   sst_file: "data/Okbay2022educ.b38.chrall.tsv.gz"
+  #   sample_size: 765283
+  #   genome_build: "GRCh38"
+  # YengoBMI2018:
+  #   sst_file: "data/YengoBMI2018.b38.chrall.tsv.gz"
+  #   sample_size: 795640
+  #   genome_build: "GRCh38"
+  # SuzukiDia2024:
+  #   sst_file: "data/SuzukiDia2024.b38.chrall.tsv.gz"
+  #   sample_size: 605056
+  #   genome_build: "GRCh38"
+  # Keaton2024sysBP:
+  #   sst_file: "data/Keaton2024sysBP.b38.chrall.tsv.gz"
+  #   sample_size: 745820
+  #   genome_build: "GRCh38"
+  # Keaton2024diaBP:
+  #   sst_file: "data/Keaton2024diaBP.b38.chrall.tsv.gz"
+  #   sample_size: 757601
+  #   genome_build: "GRCh38"
+  # Keaton2024PP:
+  #   sst_file: "data/Keaton2024PP.b38.chrall.tsv.gz"
+  #   sample_size: 745820
+  #   genome_build: "GRCh38"
+  # Graham2021HDL_eur:
+  #   sst_file: "data/Graham2021HDL_eur.b38.chrall.tsv.gz"
+  #   sample_size: 187167
+  #   genome_build: "GRCh38"
+  # Graham2021LDL_eur:
+  #   sst_file: "data/Graham2021LDL_eur.b38.chrall.tsv.gz"
+  #   sample_size: 173082
+  #   genome_build: "GRCh38"
+  # Graham2021tc_eur:
+  #   sst_file: "data/Graham2021tc_eur.b38.chrall.tsv.gz"
+  #   sample_size: 187365
+  #   genome_build: "GRCh38"
+  # Grahan2021tg_eur:
+  #   sst_file: "data/Grahan2021tg_eur.b38.chrall.tsv.gz"
+  #   sample_size: 177860
+  #   genome_build: "GRCh38"
+  SaundersDrnkwk:
+    sst_file: "data/SaundersDrnkwk.b38.chrall.tsv.gz"
+    sample_size: 666978
+    genome_build: "GRCh38"
+  # Meng2024:
+  #   sst_file: "data/Meng2024.b38.chrall.tsv.gz"
+  #   sample_size: 693529
+  #   genome_build: "GRCh38"
+  # Trpchevska2022:
+  #   sst_file: "data/Trpchevska2022.b38.chrall.tsv.gz"
+  #   sample_size: 693529
+  #   genome_build: "GRCh38"
+  # Socrates2024:
+  #   sst_file: "data/Socrates2024.b38.chrall.tsv.gz"
+  #   sample_size: 693529
+  #   genome_build: "GRCh38"
+  # Choquet2021:
+  #   sst_file: "data/Choquet2021.b38.chrall.tsv.gz"
+  #   sample_size: 693529
+  #   genome_build: "GRCh38"
+  # Klimentidis2018:
+  #   sst_file: "data/Klimentidis2018.b38.chrall.tsv.gz"
+  #   sample_size: 377234
+  #   genome_build: "GRCh38"
+
+
+# PRS-CS Auto parameters
+PRScs-auto:
+  chromosomes: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22]  # Chromosomes to analyze
+  #chromosomes: [21,22]
+  phi: "auto"  # Auto-tune shrinkage parameter
+  meta: False  # Set to True if using PRS-CSx (multi-population)
+  sst_file: "work/{cohort}/formatted/{dataset}_formated_ss.txt"
+  ref_ld: "resources/PRScs/ld_ref/ldblk_1kg_eur"
+  ld_build: "GRCh37"  # Reference LD panel genome build
+
+
+apoe: #build37
+  chrom: 19
+  start: 44909053
+  end: 45912650
+
+
+# apoe: #build38
+#   chrom: 19
+#   start: 44405791
+#   end: 45409393
