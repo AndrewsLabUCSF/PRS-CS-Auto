@@ -18,7 +18,7 @@ from snakemake.utils import min_version
 min_version("8.0")
 
 
-#configfile: 'config/config_aadrita_2.yaml'
+configfile: 'config/config_03_2026.yaml'
 # Extract dataset names dynamically
 DATASETS = list(config["summary_statistics"].keys()) 
 
