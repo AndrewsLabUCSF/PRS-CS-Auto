@@ -47,6 +47,11 @@ if (!("BETA" %in% colnames(ss)) && "ES" %in% colnames(ss)) {
   message("Renaming ES to BETA")
   ss <- ss %>% rename(BETA = ES)
 }
+# rename CHROM -> CHR if needed
+if (!("CHR" %in% colnames(ss)) && ("CHROM" %in% colnames(ss))) {
+  message("Renaming CHROM to CHR")
+  ss <- ss %>% rename(CHR = CHROM)
+}
 
 # 6) Convert LP -> P if present
 if ("LP" %in% colnames(ss)) {
